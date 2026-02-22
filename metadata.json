@@ -1,0 +1,5 @@
+{
+  "name": "PartyPlanner AI",
+  "description": "AI-powered party venue finder and planner using natural language and Google Maps.",
+  "requestFramePermissions": ["geolocation"]
+}
