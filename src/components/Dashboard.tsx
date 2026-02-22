@@ -1,208 +1,426 @@
-import React, { useState, useEffect } from 'react';
-import { Search, History, LogOut, PartyPopper, Loader2, Sparkles, Map as MapIcon } from 'lucide-react';
-import { api } from '../services/api';
-import { User, Venue, Plan } from '../types';
-import { VenueCard } from './VenueCard';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Camera, 
+  History, 
+  Settings, 
+  LogOut, 
+  Plus, 
+  Flame, 
+  Dna, 
+  Wheat, 
+  Loader2,
+  X,
+  Upload,
+  Search
+} from 'lucide-react';
+import { api } from '../services/api';
+import { User, FoodLog, Stats } from '../types';
 
-export const Dashboard: React.FC<{ user: User; onLogout: () => void }> = ({ user, onLogout }) => {
-  const [prompt, setPrompt] = useState('');
+interface DashboardProps {
+  user: User;
+  onLogout: () => void;
+}
+
+export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
+  const [view, setView] = useState<'today' | 'history' | 'settings'>('today');
   const [loading, setLoading] = useState(false);
-  const [venues, setVenues] = useState<Venue[]>([]);
-  const [history, setHistory] = useState<Plan[]>([]);
-  const [view, setView] = useState<'search' | 'history'>('search');
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [logs, setLogs] = useState<FoodLog[]>([]);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    loadHistory();
+    loadData();
   }, []);
 
-  const loadHistory = async () => {
+  const loadData = async () => {
     try {
-      const data = await api.getHistory();
-      setHistory(data);
-    } catch (e) {
-      console.error(e);
+      const [statsData, logsData] = await Promise.all([
+        api.getStats(),
+        api.getLogs()
+      ]);
+      setStats(statsData);
+      setLogs(logsData);
+    } catch (error) {
+      console.error(error);
     }
   };
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!prompt.trim()) return;
-
-    setLoading(true);
-    setVenues([]);
+  const startCamera = async () => {
+    setIsCapturing(true);
     try {
-      // Get location if possible
-      let location = undefined;
-      try {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
-        });
-        location = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-      } catch (e) {
-        console.log("Geolocation not available or timed out");
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
       }
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+      setIsCapturing(false);
+    }
+  };
 
-      const result = await api.createPlan(prompt, location);
-      setVenues(result.venues);
-      loadHistory();
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+    }
+    setIsCapturing(false);
+  };
+
+  const captureImage = async () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(video, 0, 0);
+      const imageData = canvas.toDataURL('image/jpeg');
+      stopCamera();
+      analyzeImage(imageData);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        analyzeImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const analyzeImage = async (image: string) => {
+    setLoading(true);
+    try {
+      await api.analyzeFood(image);
+      await loadData();
     } catch (error: any) {
-      console.error(error);
-      alert(error.message || "Failed to find venues. Please try again.");
+      alert(error.message);
     } finally {
       setLoading(false);
     }
   };
 
+  const progress = stats ? (stats.current.totalCalories / stats.goals.calorie_goal) * 100 : 0;
+
   return (
-    <div className="flex h-screen bg-[var(--color-bg-dark)] overflow-hidden">
+    <div className="flex h-screen bg-black text-white">
       {/* Sidebar */}
-      <aside className="w-72 border-r border-[var(--color-border-subtle)] flex flex-col p-6">
-        <div className="flex items-center gap-3 mb-10">
-          <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
-            <PartyPopper className="text-black w-6 h-6" />
+      <aside className="w-24 lg:w-72 border-r border-white/5 flex flex-col p-6">
+        <div className="flex items-center gap-3 mb-12 px-2">
+          <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center">
+            <Flame className="text-black w-6 h-6" />
           </div>
-          <h1 className="text-xl font-bold font-display tracking-tight">PartyPlanner AI</h1>
+          <h1 className="text-xl font-bold font-display hidden lg:block tracking-tight">MacroLens <span className="text-emerald-500">AI</span></h1>
         </div>
 
         <nav className="flex-1 space-y-2">
-          <button
-            onClick={() => setView('search')}
-            className={`sidebar-item w-full ${view === 'search' ? 'active' : ''}`}
+          <button 
+            onClick={() => setView('today')}
+            className={`sidebar-item w-full ${view === 'today' ? 'active' : ''}`}
           >
-            <Search className="w-5 h-5" />
-            Plan a Party
+            <Plus className="w-5 h-5" />
+            <span className="hidden lg:block font-medium">Today's Log</span>
           </button>
-          <button
+          <button 
             onClick={() => setView('history')}
             className={`sidebar-item w-full ${view === 'history' ? 'active' : ''}`}
           >
             <History className="w-5 h-5" />
-            My Plans
+            <span className="hidden lg:block font-medium">History</span>
+          </button>
+          <button 
+            onClick={() => setView('settings')}
+            className={`sidebar-item w-full ${view === 'settings' ? 'active' : ''}`}
+          >
+            <Settings className="w-5 h-5" />
+            <span className="hidden lg:block font-medium">Goals</span>
           </button>
         </nav>
 
-        <div className="mt-auto pt-6 border-t border-[var(--color-border-subtle)]">
-          <div className="flex items-center gap-3 px-4 py-3 mb-4">
-            <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold">
-              {user.name.charAt(0).toUpperCase()}
+        <div className="pt-6 border-t border-white/5">
+          <div className="flex items-center gap-3 px-4 py-3 mb-4 hidden lg:flex">
+            <div className="w-8 h-8 bg-zinc-800 rounded-full flex items-center justify-center text-xs font-bold">
+              {user.name[0]}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{user.name}</p>
+              <p className="text-sm font-bold truncate">{user.name}</p>
               <p className="text-xs text-zinc-500 truncate">{user.email}</p>
             </div>
           </div>
-          <button
+          <button 
             onClick={onLogout}
-            className="sidebar-item w-full text-red-400 hover:text-red-300 hover:bg-red-500/5"
+            className="sidebar-item w-full text-red-400 hover:bg-red-500/10 hover:text-red-400"
           >
             <LogOut className="w-5 h-5" />
-            Sign Out
+            <span className="hidden lg:block font-medium">Sign Out</span>
           </button>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-8 lg:p-12">
-        <div className="max-w-6xl mx-auto">
+      <main className="flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top_right,_rgba(16,185,129,0.03),_transparent_40%)]">
+        <div className="max-w-5xl mx-auto p-8 lg:p-16">
           <AnimatePresence mode="wait">
-            {view === 'search' ? (
+            {view === 'today' ? (
               <motion.div
-                key="search"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
+                key="today"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-12"
               >
-                <header className="mb-12">
-                  <h2 className="text-4xl font-bold font-display mb-4">Where's the party?</h2>
-                  <p className="text-zinc-400 text-lg max-w-2xl">
-                    Describe your dream event in natural language. We'll find the perfect venues using AI and Google Maps.
-                  </p>
+                <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+                  <div>
+                    <h2 className="text-5xl font-bold font-display tracking-tight mb-4">Daily <span className="gradient-text">Progress</span></h2>
+                    <p className="text-zinc-500 text-lg font-light">Track your nutrition with AI precision.</p>
+                  </div>
+                  <div className="flex gap-4">
+                    <button 
+                      onClick={startCamera}
+                      className="bg-white text-black font-bold px-6 py-3 rounded-2xl flex items-center gap-2 hover:bg-emerald-400 transition-all"
+                    >
+                      <Camera className="w-5 h-5" />
+                      Snap Food
+                    </button>
+                    <label className="bg-zinc-900 border border-white/10 text-white font-bold px-6 py-3 rounded-2xl flex items-center gap-2 hover:bg-white/5 transition-all cursor-pointer">
+                      <Upload className="w-5 h-5" />
+                      Upload
+                      <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+                    </label>
+                  </div>
                 </header>
 
-                <form onSubmit={handleSearch} className="relative mb-16">
-                  <div className="relative group">
-                    <input
-                      type="text"
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      placeholder="e.g., A cozy 21st birthday dinner for 10 people in downtown Chicago with a budget of $50 per person"
-                      className="w-full bg-[var(--color-bg-card)] border border-[var(--color-border-subtle)] rounded-2xl py-6 pl-16 pr-32 text-lg focus:outline-none focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/5 transition-all"
-                    />
-                    <Sparkles className="absolute left-6 top-1/2 -translate-y-1/2 text-emerald-500 w-6 h-6" />
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-zinc-700 text-black font-bold px-6 py-3 rounded-xl transition-all flex items-center gap-2"
-                    >
-                      {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Find Venues'}
-                    </button>
-                  </div>
-                </form>
+                {/* Stats Grid */}
+                {stats && (
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    <div className="lg:col-span-2 glass rounded-[2.5rem] p-8 flex flex-col justify-between">
+                      <div>
+                        <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest mb-2">Calories</p>
+                        <h3 className="text-4xl font-bold font-display">{stats.current.totalCalories || 0} <span className="text-zinc-600 text-xl font-light">/ {stats.goals.calorie_goal} kcal</span></h3>
+                      </div>
+                      <div className="mt-8">
+                        <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${Math.min(progress, 100)}%` }}
+                            className="h-full bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.5)]"
+                          />
+                        </div>
+                      </div>
+                    </div>
 
-                {loading && (
-                  <div className="flex flex-col items-center justify-center py-20 space-y-4">
-                    <Loader2 className="w-12 h-12 text-emerald-500 animate-spin" />
-                    <p className="text-zinc-400 animate-pulse">Consulting the party experts...</p>
+                    <div className="glass rounded-[2.5rem] p-8">
+                      <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center mb-4">
+                        <Dna className="text-blue-400 w-5 h-5" />
+                      </div>
+                      <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-1">Protein</p>
+                      <h4 className="text-2xl font-bold font-display">{stats.current.totalProtein || 0}g</h4>
+                      <p className="text-zinc-600 text-xs mt-1">Goal: {stats.goals.protein_goal}g</p>
+                    </div>
+
+                    <div className="glass rounded-[2.5rem] p-8">
+                      <div className="w-10 h-10 bg-amber-500/10 rounded-xl flex items-center justify-center mb-4">
+                        <Wheat className="text-amber-400 w-5 h-5" />
+                      </div>
+                      <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-1">Carbs</p>
+                      <h4 className="text-2xl font-bold font-display">{stats.current.totalCarbs || 0}g</h4>
+                      <p className="text-zinc-600 text-xs mt-1">Goal: {stats.goals.carbs_goal}g</p>
+                    </div>
                   </div>
                 )}
 
-                {venues.length > 0 && !loading && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {venues.map((venue, i) => (
-                      <VenueCard key={i} venue={venue} index={i} />
+                {/* Recent Logs */}
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                    <h3 className="text-xl font-bold font-display">Today's Meals</h3>
+                    <button onClick={() => setView('history')} className="text-emerald-400 text-sm hover:underline">View All</button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {logs.filter(log => new Date(log.created_at).toDateString() === new Date().toDateString()).map((log) => (
+                      <div key={log.id} className="glass rounded-3xl p-4 flex gap-4 items-center">
+                        <div className="w-20 h-20 rounded-2xl overflow-hidden bg-zinc-900">
+                          <img src={log.image_url} alt={log.food_name} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-bold">{log.food_name}</h4>
+                          <p className="text-zinc-500 text-sm">{log.calories} kcal</p>
+                          <div className="flex gap-3 mt-1 text-[10px] font-bold uppercase tracking-tighter text-zinc-600">
+                            <span>P: {log.protein}g</span>
+                            <span>C: {log.carbs}g</span>
+                            <span>F: {log.fat}g</span>
+                          </div>
+                        </div>
+                      </div>
                     ))}
+                    {logs.filter(log => new Date(log.created_at).toDateString() === new Date().toDateString()).length === 0 && (
+                      <div className="col-span-full py-12 text-center text-zinc-600 border border-dashed border-white/5 rounded-3xl">
+                        No meals logged today yet.
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
+              </motion.div>
+            ) : view === 'history' ? (
+              <motion.div
+                key="history"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-8"
+              >
+                <header>
+                  <h2 className="text-4xl font-bold font-display tracking-tight mb-2">Meal <span className="gradient-text">History</span></h2>
+                  <p className="text-zinc-500">Your past nutrition logs.</p>
+                </header>
 
-                {!loading && venues.length === 0 && (
-                  <div className="text-center py-20 border-2 border-dashed border-[var(--color-border-subtle)] rounded-3xl">
-                    <MapIcon className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
-                    <p className="text-zinc-500">Your curated venues will appear here.</p>
-                  </div>
-                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {logs.map((log) => (
+                    <div key={log.id} className="glass rounded-3xl overflow-hidden group">
+                      <div className="aspect-square relative">
+                        <img src={log.image_url} alt={log.food_name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                        <div className="absolute bottom-4 left-4">
+                          <p className="text-xs text-zinc-400 mb-1">{new Date(log.created_at).toLocaleDateString()}</p>
+                          <h4 className="text-lg font-bold">{log.food_name}</h4>
+                        </div>
+                      </div>
+                      <div className="p-6 grid grid-cols-2 gap-4">
+                        <div className="bg-white/5 rounded-2xl p-3">
+                          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Calories</p>
+                          <p className="text-lg font-bold">{log.calories}</p>
+                        </div>
+                        <div className="bg-white/5 rounded-2xl p-3">
+                          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Protein</p>
+                          <p className="text-lg font-bold">{log.protein}g</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </motion.div>
             ) : (
               <motion.div
-                key="history"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
+                key="settings"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="max-w-xl"
               >
                 <header className="mb-12">
-                  <h2 className="text-4xl font-bold font-display mb-4">Your Party History</h2>
-                  <p className="text-zinc-400 text-lg">Revisit your past planning sessions and saved venues.</p>
+                  <h2 className="text-4xl font-bold font-display tracking-tight mb-2">Nutrition <span className="gradient-text">Goals</span></h2>
+                  <p className="text-zinc-500">Personalize your daily targets.</p>
                 </header>
 
-                <div className="space-y-12">
-                  {history.length > 0 ? (
-                    history.map((plan) => (
-                      <div key={plan.id} className="space-y-6">
-                        <div className="flex items-center justify-between border-b border-[var(--color-border-subtle)] pb-4">
-                          <h3 className="text-xl font-semibold text-emerald-400">"{plan.prompt}"</h3>
-                          <span className="text-sm text-zinc-500">
-                            {new Date(plan.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                          {plan.venues.map((venue, i) => (
-                            <VenueCard key={i} venue={venue} index={i} />
-                          ))}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-20">
-                      <History className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
-                      <p className="text-zinc-500">No party plans yet. Start searching above!</p>
+                <div className="glass rounded-[2.5rem] p-10 space-y-8">
+                  <div className="space-y-4">
+                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest ml-1">Daily Calorie Goal</label>
+                    <input 
+                      type="number" 
+                      defaultValue={stats?.goals.calorie_goal}
+                      onBlur={(e) => api.updateGoals({ ...stats?.goals, calorie_goal: parseInt(e.target.value) }).then(loadData)}
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-4 px-6 focus:outline-none focus:border-emerald-500/50 transition-all text-white"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Protein (g)</label>
+                      <input 
+                        type="number" 
+                        defaultValue={stats?.goals.protein_goal}
+                        onBlur={(e) => api.updateGoals({ ...stats?.goals, protein_goal: parseInt(e.target.value) }).then(loadData)}
+                        className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-4 px-4 focus:outline-none focus:border-emerald-500/50 transition-all text-white"
+                      />
                     </div>
-                  )}
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Carbs (g)</label>
+                      <input 
+                        type="number" 
+                        defaultValue={stats?.goals.carbs_goal}
+                        onBlur={(e) => api.updateGoals({ ...stats?.goals, carbs_goal: parseInt(e.target.value) }).then(loadData)}
+                        className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-4 px-4 focus:outline-none focus:border-emerald-500/50 transition-all text-white"
+                      />
+                    </div>
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Fat (g)</label>
+                      <input 
+                        type="number" 
+                        defaultValue={stats?.goals.fat_goal}
+                        onBlur={(e) => api.updateGoals({ ...stats?.goals, fat_goal: parseInt(e.target.value) }).then(loadData)}
+                        className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-4 px-4 focus:outline-none focus:border-emerald-500/50 transition-all text-white"
+                      />
+                    </div>
+                  </div>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </main>
+
+      {/* Camera Overlay */}
+      <AnimatePresence>
+        {isCapturing && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black flex flex-col"
+          >
+            <div className="p-6 flex justify-between items-center">
+              <h3 className="text-xl font-bold font-display">Snap your meal</h3>
+              <button onClick={stopCamera} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="flex-1 relative overflow-hidden">
+              <video 
+                ref={videoRef} 
+                autoPlay 
+                playsInline 
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 border-[40px] border-black/40 pointer-events-none">
+                <div className="w-full h-full border-2 border-white/20 rounded-3xl" />
+              </div>
+            </div>
+            <div className="p-12 flex justify-center">
+              <button 
+                onClick={captureImage}
+                className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-2xl hover:scale-110 transition-transform active:scale-95"
+              >
+                <div className="w-16 h-16 border-4 border-black rounded-full" />
+              </button>
+            </div>
+            <canvas ref={canvasRef} className="hidden" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Loading Overlay */}
+      <AnimatePresence>
+        {loading && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center"
+          >
+            <div className="relative mb-8">
+              <div className="w-24 h-24 border-4 border-emerald-500/20 rounded-full"></div>
+              <div className="absolute inset-0 w-24 h-24 border-t-4 border-emerald-500 rounded-full animate-spin"></div>
+            </div>
+            <h3 className="text-2xl font-bold font-display mb-2">Analyzing Nutrition</h3>
+            <p className="text-zinc-500 animate-pulse">Gemini AI is identifying ingredients...</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

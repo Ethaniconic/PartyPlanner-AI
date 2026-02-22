@@ -18,7 +18,7 @@ declare module "express-session" {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const db = new Database("partyplanner.db");
+const db = new Database("macrolens.db");
 
 // Initialize DB
 db.exec(`
@@ -26,13 +26,21 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE,
     password TEXT,
-    name TEXT
+    name TEXT,
+    calorie_goal INTEGER DEFAULT 2000,
+    protein_goal INTEGER DEFAULT 150,
+    carbs_goal INTEGER DEFAULT 200,
+    fat_goal INTEGER DEFAULT 70
   );
-  CREATE TABLE IF NOT EXISTS plans (
+  CREATE TABLE IF NOT EXISTS food_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
-    prompt TEXT,
-    venues TEXT,
+    food_name TEXT,
+    calories INTEGER,
+    protein INTEGER,
+    carbs INTEGER,
+    fat INTEGER,
+    image_url TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
@@ -46,7 +54,7 @@ async function startServer() {
   app.use(express.json());
   app.use(
     session({
-      secret: process.env.SESSION_SECRET || "party-secret",
+      secret: process.env.SESSION_SECRET || "macrolens-secret",
       resave: false,
       saveUninitialized: false,
       cookie: {
@@ -102,9 +110,9 @@ async function startServer() {
     });
   });
 
-  // Party Planning Route
-  app.post("/api/plan", requireAuth, async (req, res) => {
-    const { prompt, location } = req.body;
+  // Food Analysis Route
+  app.post("/api/analyze-food", requireAuth, async (req, res) => {
+    const { image } = req.body; // base64 image
     
     if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({ error: "Gemini API key not configured" });
@@ -114,88 +122,76 @@ async function startServer() {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: `You are a professional party planner. Based on the user's request: "${prompt}", find the top 3 best venues.
-        
-        CRITICAL: You MUST return the data as a valid JSON array of objects. 
-        Each object MUST have these keys: "name", "rating", "description", "address", "website".
-        Do not include any other text before or after the JSON array.
-        
-        Example format:
-        [
+        model: "gemini-2.0-flash",
+        contents: [
           {
-            "name": "Venue Name",
-            "rating": 4.5,
-            "description": "A great place for...",
-            "address": "123 Main St, Chicago, IL",
-            "website": "https://example.com"
-          }
-        ]`,
-        config: {
-          tools: [{ googleMaps: {} }],
-          toolConfig: {
-            retrievalConfig: {
-              latLng: (location && typeof location.latitude === 'number') ? {
-                latitude: location.latitude,
-                longitude: location.longitude
-              } : undefined
+            inlineData: {
+              data: image.split(',')[1],
+              mimeType: "image/jpeg"
             }
+          },
+          {
+            text: "Analyze this food image and estimate the calories and macros (protein, carbs, fat). Provide a name for the food. Return strictly as JSON."
+          }
+        ],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "object",
+            properties: {
+              foodName: { type: "string" },
+              calories: { type: "number" },
+              protein: { type: "number" },
+              carbs: { type: "number" },
+              fat: { type: "number" }
+            },
+            required: ["foodName", "calories", "protein", "carbs", "fat"]
           }
         },
       });
 
-      const text = response.text || "";
-      console.log("Gemini raw response:", text);
+      const result = JSON.parse(response.text || "{}");
       
-      let venues = [];
-      try {
-        // More aggressive JSON extraction
-        const startIdx = text.indexOf('[');
-        const endIdx = text.lastIndexOf(']');
-        
-        if (startIdx !== -1 && endIdx !== -1) {
-          const jsonStr = text.substring(startIdx, endIdx + 1);
-          venues = JSON.parse(jsonStr);
-        } else {
-          console.warn("Could not find JSON array in response");
-          // Fallback: if no JSON but we have grounding, maybe we can synthesize?
-          // But for now, let's just return what we found or empty.
-        }
-      } catch (parseError) {
-        console.error("JSON parse error:", parseError, "Text was:", text);
-      }
+      // Save to DB
+      const stmt = db.prepare("INSERT INTO food_logs (user_id, food_name, calories, protein, carbs, fat, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)");
+      stmt.run(req.session.userId, result.foodName, result.calories, result.protein, result.carbs, result.fat, image);
 
-      // Add grounding links if available
-      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-      if (chunks && venues.length > 0) {
-        venues.forEach((v: any, i: number) => {
-          // Try to find a matching chunk by name if possible, or just use index
-          const chunk = chunks[i];
-          if (chunk?.maps) {
-            v.mapsUri = chunk.maps.uri;
-          }
-        });
-      }
-
-      // Ensure we have at least some data to return
-      if (venues.length === 0) {
-        return res.status(404).json({ error: "No venues found for this request. Try being more specific." });
-      }
-
-      // Save plan
-      const stmt = db.prepare("INSERT INTO plans (user_id, prompt, venues) VALUES (?, ?, ?)");
-      stmt.run(req.session.userId, prompt, JSON.stringify(venues));
-
-      res.json({ venues });
+      res.json(result);
     } catch (error: any) {
-      console.error("Planning error details:", error);
-      res.status(500).json({ error: "Failed to generate plan", details: error.message });
+      console.error("Analysis error:", error);
+      res.status(500).json({ error: "Failed to analyze food", details: error.message });
     }
   });
 
-  app.get("/api/history", requireAuth, (req, res) => {
-    const plans = db.prepare("SELECT * FROM plans WHERE user_id = ? ORDER BY created_at DESC").all(req.session.userId);
-    res.json(plans.map((p: any) => ({ ...p, venues: JSON.parse(p.venues) })));
+  app.get("/api/logs", requireAuth, (req, res) => {
+    const logs = db.prepare("SELECT * FROM food_logs WHERE user_id = ? ORDER BY created_at DESC").all(req.session.userId);
+    res.json(logs);
+  });
+
+  app.get("/api/stats", requireAuth, (req, res) => {
+    const stats = db.prepare(`
+      SELECT 
+        SUM(calories) as totalCalories,
+        SUM(protein) as totalProtein,
+        SUM(carbs) as totalCarbs,
+        SUM(fat) as totalFat
+      FROM food_logs 
+      WHERE user_id = ? AND date(created_at) = date('now')
+    `).get(req.session.userId) as any;
+
+    const user = db.prepare("SELECT calorie_goal, protein_goal, carbs_goal, fat_goal FROM users WHERE id = ?").get(req.session.userId) as any;
+
+    res.json({
+      current: stats || { totalCalories: 0, totalProtein: 0, totalCarbs: 0, totalFat: 0 },
+      goals: user
+    });
+  });
+
+  app.post("/api/goals", requireAuth, (req, res) => {
+    const { calorie_goal, protein_goal, carbs_goal, fat_goal } = req.body;
+    db.prepare("UPDATE users SET calorie_goal = ?, protein_goal = ?, carbs_goal = ?, fat_goal = ? WHERE id = ?")
+      .run(calorie_goal, protein_goal, carbs_goal, fat_goal, req.session.userId);
+    res.json({ success: true });
   });
 
   // Vite middleware for development

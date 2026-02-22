@@ -1,5 +1,5 @@
 {
-  "name": "PartyPlanner AI",
-  "description": "AI-powered party venue finder and planner using natural language and Google Maps.",
-  "requestFramePermissions": ["geolocation"]
+  "name": "MacroLens AI",
+  "description": "AI-powered calorie and macro tracker that analyzes food photos to help you reach your fitness goals.",
+  "requestFramePermissions": ["camera"]
 }

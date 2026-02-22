@@ -1,4 +1,4 @@
-import { User, Venue, Plan } from '../types';
+import { User, FoodLog, Stats } from '../types';
 
 export const api = {
   async getMe(): Promise<User | null> {
@@ -31,22 +31,37 @@ export const api = {
     await fetch('/api/auth/logout', { method: 'POST' });
   },
 
-  async createPlan(prompt: string, location?: { latitude: number; longitude: number }): Promise<{ venues: Venue[] }> {
-    const res = await fetch('/api/plan', {
+  async analyzeFood(image: string): Promise<any> {
+    const res = await fetch('/api/analyze-food', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, location }),
+      body: JSON.stringify({ image }),
     });
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to create plan');
+      throw new Error(errorData.error || 'Failed to analyze food');
     }
     return res.json();
   },
 
-  async getHistory(): Promise<Plan[]> {
-    const res = await fetch('/api/history');
-    if (!res.ok) throw new Error('Failed to fetch history');
+  async getLogs(): Promise<FoodLog[]> {
+    const res = await fetch('/api/logs');
+    if (!res.ok) throw new Error('Failed to fetch logs');
     return res.json();
+  },
+
+  async getStats(): Promise<Stats> {
+    const res = await fetch('/api/stats');
+    if (!res.ok) throw new Error('Failed to fetch stats');
+    return res.json();
+  },
+
+  async updateGoals(goals: any): Promise<void> {
+    const res = await fetch('/api/goals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(goals),
+    });
+    if (!res.ok) throw new Error('Failed to update goals');
   },
 };

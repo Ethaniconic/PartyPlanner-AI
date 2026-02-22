@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, Lock, User as UserIcon, ArrowRight, PartyPopper } from 'lucide-react';
+import { Mail, Lock, User as UserIcon, ArrowRight, Flame } from 'lucide-react';
 import { api } from '../services/api';
 import { User } from '../types';
 import { motion } from 'motion/react';
@@ -30,64 +30,75 @@ export const Auth: React.FC<{ onAuth: (user: User) => void }> = ({ onAuth }) => 
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-emerald-900/20 via-black to-black">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-black">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-emerald-500/10 blur-[120px] rounded-full" />
+        <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-500/10 blur-[120px] rounded-full" />
+      </div>
+
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8, ease: [0.23, 1, 0.32, 1] }}
+        className="w-full max-w-md relative z-10"
       >
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-2xl shadow-emerald-500/20 mx-auto mb-6">
-            <PartyPopper className="text-black w-10 h-10" />
-          </div>
-          <h1 className="text-3xl font-bold font-display mb-2">PartyPlanner AI</h1>
-          <p className="text-zinc-400">The smartest way to find your next venue.</p>
+        <div className="text-center mb-12">
+          <motion.div 
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="w-20 h-20 bg-emerald-500 rounded-[2rem] flex items-center justify-center shadow-2xl mx-auto mb-8"
+          >
+            <Flame className="text-black w-10 h-10" />
+          </motion.div>
+          <h1 className="text-5xl font-bold font-display tracking-tight mb-4">MacroLens <span className="text-emerald-500">AI</span></h1>
+          <p className="text-zinc-500 text-lg font-light">The future of personalized nutrition tracking.</p>
         </div>
 
-        <div className="bg-[var(--color-bg-card)] border border-[var(--color-border-subtle)] rounded-3xl p-8 shadow-2xl">
-          <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="glass rounded-[2.5rem] p-10 shadow-2xl">
+          <form onSubmit={handleSubmit} className="space-y-8">
             {!isLogin && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-400 ml-1">Full Name</label>
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest ml-1">Full Name</label>
                 <div className="relative">
-                  <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                  <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-600" />
                   <input
                     type="text"
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full bg-black/40 border border-[var(--color-border-subtle)] rounded-xl py-3 pl-12 pr-4 focus:outline-none focus:border-emerald-500 transition-colors"
-                    placeholder="John Doe"
+                    className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:border-emerald-500/50 transition-all text-white placeholder:text-zinc-700"
+                    placeholder="Alexander Hamilton"
                   />
                 </div>
               </div>
             )}
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-400 ml-1">Email Address</label>
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest ml-1">Email Address</label>
               <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-600" />
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-black/40 border border-[var(--color-border-subtle)] rounded-xl py-3 pl-12 pr-4 focus:outline-none focus:border-emerald-500 transition-colors"
-                  placeholder="name@example.com"
+                  className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:border-emerald-500/50 transition-all text-white placeholder:text-zinc-700"
+                  placeholder="alex@example.com"
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-400 ml-1">Password</label>
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest ml-1">Password</label>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-600" />
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-black/40 border border-[var(--color-border-subtle)] rounded-xl py-3 pl-12 pr-4 focus:outline-none focus:border-emerald-500 transition-colors"
+                  className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:border-emerald-500/50 transition-all text-white placeholder:text-zinc-700"
                   placeholder="••••••••"
                 />
               </div>
@@ -96,19 +107,19 @@ export const Auth: React.FC<{ onAuth: (user: User) => void }> = ({ onAuth }) => 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-zinc-700 text-black font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 group"
+              className="w-full bg-white hover:bg-emerald-400 text-black font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 group disabled:bg-zinc-800 disabled:text-zinc-500"
             >
               {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </button>
           </form>
 
-          <div className="mt-8 text-center">
+          <div className="mt-10 text-center">
             <button
               onClick={() => setIsLogin(!isLogin)}
-              className="text-emerald-500 hover:text-emerald-400 text-sm font-medium transition-colors"
+              className="text-zinc-500 hover:text-emerald-400 text-sm font-medium transition-colors"
             >
-              {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
+              {isLogin ? "New to MacroLens? Create an account" : "Already have an account? Sign in"}
             </button>
           </div>
         </div>
